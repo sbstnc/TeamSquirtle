@@ -1,0 +1,23 @@
+{
+    "KPlugin": {
+        "Description": "Window decoration using the TeamSquirtle visual style for the Plasma Desktop", 
+        "Description[es]": "Decoración de ventanas que usa el estilo visual Brisa para el escritorio Plasma", 
+        "Description[nl]": "Vensterdecoratie met gebruik van de visuele stijl TeamSquirtle voor het Plasma bureaublad", 
+        "Description[pt]": "Decoração de janelas que usa o estilo visual Brisa para a Área de Trabalho Plasma", 
+        "Description[uk]": "Обрамлення вікон з використанням візуального стилю TeamSquirtle для стільничного середовища Плазми", 
+        "Description[x-test]": "xxWindow decoration using the TeamSquirtle visual style for the Plasma Desktopxx", 
+        "EnabledByDefault": true, 
+        "Id": "org.kde.teamsquirtle", 
+        "Name": "TeamSquirtle", 
+        "Name[es]": "Brisa", 
+        "Name[pt]": "Brisa", 
+        "Name[x-test]": "xxTeamSquirtlexx", 
+        "ServiceTypes": [
+            "org.kde.kdecoration2"
+        ]
+    }, 
+    "org.kde.kdecoration2": {
+        "blur": false, 
+        "kcmodule": true
+    }
+}

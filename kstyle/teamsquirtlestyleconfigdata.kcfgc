@@ -1,0 +1,6 @@
+File=teamsquirtle.kcfgc
+ClassName=StyleConfigData
+NameSpace=TeamSquirtle
+Singleton=true
+Mutators=true
+GlobalEnums=true

@@ -1,0 +1,20 @@
+[kdeglobals][KDE]
+widgetStyle=TeamSquirtle
+
+[kdeglobals][General]
+ColorScheme=TeamSquirtle Dark
+
+[kdeglobals][Icons]
+Theme=teamsquirtle-dark
+
+[plasmarc][Theme]
+name=teamsquirtle-dark
+
+[kcminputrc][Mouse]
+cursorTheme=teamsquirtle_cursors
+
+[kwinrc][WindowSwitcher]
+LayoutName=org.kde.teamsquirtle.desktop
+
+[kwinrc][DesktopSwitcher]
+LayoutName=org.kde.teamsquirtle.desktop

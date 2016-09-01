@@ -1,0 +1,1 @@
+install(DIRECTORY TeamSquirtle_Snow DESTINATION ${ICON_INSTALL_DIR})

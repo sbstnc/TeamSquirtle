@@ -1,0 +1,2 @@
+
+INSTALL(FILES TeamSquirtle.qtcurve DESTINATION ${DATA_INSTALL_DIR}/QtCurve/)
