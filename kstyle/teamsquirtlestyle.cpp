@@ -6780,7 +6780,6 @@ QColor Style::scrollBarArrowColor( const QStyleOptionSlider* option, const SubCo
         }
 
         if( StyleConfigData::animationsEnabled() ) {
-        {
             // finally, global opacity when ScrollBarShowOnMouseOver
             const qreal globalOpacity( _animations->scrollBarEngine().opacity( widget, QStyle::SC_ScrollBarGroove ) );
             if( globalOpacity >= 0 ) color.setAlphaF( globalOpacity );
