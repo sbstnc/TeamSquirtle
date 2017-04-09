@@ -429,7 +429,7 @@ namespace TeamSquirtle
             { startDrag( _target.data()->window()->windowHandle(), _globalDragPoint ); }
             else if( _quickTarget )
             { startDrag( _quickTarget.data()->window(), _globalDragPoint ); }
-##endif
+#endif
 
         } else {
 
@@ -920,7 +920,6 @@ namespace TeamSquirtle
             return;
         }
 
-        QWindow* windowHandle = widget->window()->windowHandle();
         auto shellSurface = KWayland::Client::ShellSurface::fromWindow(window);
         if( !shellSurface ) {
             // TODO: also check for xdg-shell in future
