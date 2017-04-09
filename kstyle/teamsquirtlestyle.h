@@ -22,6 +22,7 @@
 
 #include "teamsquirtle.h"
 #include "config-teamsquirtle.h"
+#include "teamsquirtlehelper.h"
 
 #if TEAMSQUIRTLE_HAVE_KSTYLE
 #include <KStyle>

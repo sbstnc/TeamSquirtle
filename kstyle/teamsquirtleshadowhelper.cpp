@@ -64,7 +64,8 @@ namespace TeamSquirtle
         , _shmPool( Q_NULLPTR )
         #endif
     {
-        initializeWayland();
+        // delay till event dispatcher is running as Wayland is highly async
+        QMetaObject::invokeMethod(this, "initializeWayland", Qt::QueuedConnection);
     }
 
     //_______________________________________________________
@@ -533,7 +534,7 @@ namespace TeamSquirtle
     void ShadowHelper::uninstallWaylandShadows( QWidget* widget ) const
     {
         #if TEAMSQUIRTLE_HAVE_KWAYLAND
-        if( widget->windowHandle()->parent() ) return;
+        if( widget->windowHandle() && widget->windowHandle()->parent() ) return;
         if( !_shadowManager ) return;
 
         using namespace KWayland::Client;

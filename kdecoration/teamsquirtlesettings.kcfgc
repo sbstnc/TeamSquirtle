@@ -1,4 +1,4 @@
-File=teamsquirtlesettingsdata.kcfgc
+File=teamsquirtlesettingsdata.kcfg
 ClassName=InternalSettings
 NameSpace=TeamSquirtle
 Singleton=false

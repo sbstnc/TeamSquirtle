@@ -22,7 +22,6 @@
 #include "teamsquirtle.h"
 #include "teamsquirtleanimations.h"
 #include "teamsquirtleframeshadow.h"
-#include "teamsquirtlehelper.h"
 #include "teamsquirtlemdiwindowshadow.h"
 #include "teamsquirtlemnemonics.h"
 #include "teamsquirtlepropertynames.h"
@@ -1435,7 +1434,6 @@ namespace TeamSquirtle
         // widget explorer
         _widgetExplorer->setEnabled( StyleConfigData::widgetExplorerEnabled() );
         _widgetExplorer->setDrawWidgetRects( StyleConfigData::drawWidgetRects() );
-
     }
 
     //___________________________________________________________________________________________________________________
@@ -2507,7 +2505,7 @@ namespace TeamSquirtle
         size.setHeight( qMax( size.height(), int(Metrics::MenuButton_IndicatorWidth) ) );
 
         // add button width and spacing
-        size.rwidth() += Metrics::MenuButton_IndicatorWidth;
+        size.rwidth() += Metrics::MenuButton_IndicatorWidth+2;
 
         return size;
 
@@ -2953,9 +2951,9 @@ namespace TeamSquirtle
         int contentsHeight( headerOption->fontMetrics.height() );
         if( hasIcon ) contentsHeight = qMax( contentsHeight, iconSize.height() );
 
-        if( horizontal )
+        if( horizontal && headerOption->sortIndicator != QStyleOptionHeader::None )
         {
-            // also add space for icon
+            // also add space for sort indicator
             contentsWidth += Metrics::Header_ArrowSize + Metrics::Header_ItemSpacing;
             contentsHeight = qMax( contentsHeight, int(Metrics::Header_ArrowSize) );
         }
@@ -3105,9 +3103,19 @@ bool Style::drawFrameFocusRectPrimitive( const QStyleOption* option, QPainter* p
 
     if( !widget ) return true;
 
-        // no focus indicator on buttons, since it is rendered elsewhere
-    if( qobject_cast< const QAbstractButton*>( widget ) )
-        { return true; }
+    // no focus indicator on buttons / scrollbars, since it is rendered elsewhere
+    if ( qobject_cast< const QAbstractButton*>( widget ) || qobject_cast< const QScrollBar*>( widget ) )
+        return true;
+
+    // no focus indicator on ComboBox list items
+    if (widget && widget->inherits("QComboBoxListView")) {
+        return true;
+    }
+
+    #if QT_VERSION >= 0x050000
+        if ( option->styleObject && option->styleObject->property("elementType") == QLatin1String("button") )
+            return true;
+    #endif
 
     const State& state( option->state );
     const QRect rect( option->rect.adjusted( 0, 0, 0, 1 ) );
@@ -3139,7 +3147,6 @@ bool Style::drawFrameMenuPrimitive( const QStyleOption* option, QPainter* painte
         const bool hasAlpha( _helper->hasAlphaChannel( widget ) );
         _helper->renderMenuFrame( painter, option->rect, background, outline, hasAlpha );
 
-        #if !TEAMSQUIRTLE_USE_KDE4
     } else if( isQtQuickControl( option, widget ) ) {
 
         const QPalette& palette( option->palette );
@@ -3149,7 +3156,6 @@ bool Style::drawFrameMenuPrimitive( const QStyleOption* option, QPainter* painte
         const bool hasAlpha( _helper->hasAlphaChannel( widget ) );
         _helper->renderMenuFrame( painter, option->rect, background, outline, hasAlpha );
 
-        #endif
     }
 
     return true;
@@ -4929,7 +4935,12 @@ bool Style::drawFrameGroupBoxPrimitive( const QStyleOption* option, QPainter* pa
 
             }
 
-            _helper->renderProgressBarContents( painter, rect, palette.color( QPalette::Highlight ) );
+            QColor contentsColor(
+                option->state.testFlag( QStyle::State_Selected ) ?
+                palette.color( QPalette::HighlightedText ) :
+                palette.color( QPalette::Highlight ) );
+
+            _helper->renderProgressBarContents( painter, rect, contentsColor );
             painter->setClipRegion( oldClipRegion );
 
         }
@@ -5000,18 +5011,19 @@ bool Style::drawFrameGroupBoxPrimitive( const QStyleOption* option, QPainter* pa
 
         // check focus from relevant parent
         const QWidget* parent( scrollBarParent( widget ) );
-        const bool hasFocus( enabled && parent && parent->hasFocus() );
+        const bool hasFocus( enabled && ( (widget && widget->hasFocus()) || (parent && parent->hasFocus()) ) );
 
         // enable animation state
         const bool handleActive( sliderOption->activeSubControls & SC_ScrollBarSlider );
         _animations->scrollBarEngine().updateState( widget, AnimationFocus, hasFocus );
+
         _animations->scrollBarEngine().updateState( widget, AnimationHover, mouseOver && handleActive );
+
         const AnimationMode mode( _animations->scrollBarEngine().animationMode( widget, SC_ScrollBarSlider ) );
         const qreal opacity( _animations->scrollBarEngine().opacity( widget, SC_ScrollBarSlider ) );
+        const QColor color = _helper->scrollBarHandleColor( palette, mouseOver, hasFocus, opacity, mode );
 
-        const QColor color( _helper->scrollBarHandleColor( palette, mouseOver, hasFocus, opacity, mode ) );
         _helper->renderScrollBarHandle( painter, handleRect, color );
-
         return true;
     }
 
@@ -5602,7 +5614,7 @@ bool Style::drawFrameGroupBoxPrimitive( const QStyleOption* option, QPainter* pa
 
         } else {
 
-            const QColor normal( _helper->alphaColor( palette.color( QPalette::WindowText ), 0.2 ) );
+            const QColor normal( _helper->alphaColor( palette.color( QPalette::Shadow ), 0.2 ) );
             const QColor hover( _helper->alphaColor( _helper->hoverColor( palette ), 0.2 ) );
             if( animated ) color = KColorUtils::mix( normal, hover, opacity );
             else if( mouseOver ) color = hover;
@@ -6410,28 +6422,35 @@ bool Style::drawFrameGroupBoxPrimitive( const QStyleOption* option, QPainter* pa
     //______________________________________________________________
 bool Style::drawScrollBarComplexControl( const QStyleOptionComplex* option, QPainter* painter, const QWidget* widget ) const
 {
+    //the animation for QStyle::SC_ScrollBarGroove is special: it will animate
+    //the opacity of everything else as well, included slider and arrows
+    qreal opacity( _animations->scrollBarEngine().opacity( widget, QStyle::SC_ScrollBarGroove ) );
+    const bool animated( StyleConfigData::animationsEnabled() && _animations->scrollBarEngine().isAnimated( widget,  AnimationHover, QStyle::SC_ScrollBarGroove ) );
+    const bool mouseOver( option->state & State_MouseOver );
 
-        // render full groove directly, rather than using the addPage and subPage control element methods
-    if( option->subControls & SC_ScrollBarGroove )
+    if( opacity == AnimationData::OpacityInvalid ) opacity = 1;
+
+    // render full groove directly, rather than using the addPage and subPage control element methods
+    if( (!StyleConfigData::animationsEnabled() || mouseOver || animated) && option->subControls & SC_ScrollBarGroove )
     {
-            // retrieve groove rectangle
+        // retrieve groove rectangle
         QRect grooveRect( subControlRect( CC_ScrollBar, option, SC_ScrollBarGroove, widget ) );
 
         const QPalette& palette( option->palette );
-        const QColor color( _helper->alphaColor( palette.color( QPalette::WindowText ), 0.3 ) );
+        const QColor color( _helper->alphaColor( palette.color( QPalette::WindowText ), 0.3 * (animated ? opacity : 1) ) );
         const State& state( option->state );
         const bool horizontal( state & State_Horizontal );
 
         if( horizontal ) grooveRect = centerRect( grooveRect, grooveRect.width(), Metrics::ScrollBar_SliderWidth );
         else grooveRect = centerRect( grooveRect, Metrics::ScrollBar_SliderWidth, grooveRect.height() );
 
-            // render
+        // render
         _helper->renderScrollBarGroove( painter, grooveRect, color );
-
     }
 
-        // call base class primitive
+    // call base class primitive
     ParentStyleClass::drawComplexControl( CC_ScrollBar, option, painter, widget );
+
     return true;
 }
 
@@ -6691,25 +6710,48 @@ QColor Style::scrollBarArrowColor( const QStyleOptionSlider* option, const SubCo
     const QPalette& palette( option->palette );
     QColor color( _helper->arrowColor( palette, QPalette::WindowText ) );
 
-        // check enabled state
+    bool widgetMouseOver( ( option->state & State_MouseOver ) );
+    if( widget ) widgetMouseOver = widget->underMouse();
+    #if QT_VERSION >= 0x050000
+    // in case this QStyle is used by QQuickControls QStyle wrapper
+    else if( option->styleObject ) widgetMouseOver = option->styleObject->property("hover").toBool();
+    #endif
+
+    // check enabled state
     const bool enabled( option->state & State_Enabled );
-    if( !enabled ) return color;
+    if( !enabled ) {
+        if( StyleConfigData::animationsEnabled() ) {
+            // finally, global opacity when ScrollBarShowOnMouseOver
+            const qreal globalOpacity( _animations->scrollBarEngine().opacity( widget, QStyle::SC_ScrollBarGroove ) );
+            if( globalOpacity >= 0 ) color.setAlphaF( globalOpacity );
+            // no mouse over and no animation in progress, don't draw arrows at all
+            else if( !widgetMouseOver ) return Qt::transparent;
+        }
+        return color;
+    }
 
     if(
         ( control == SC_ScrollBarSubLine && option->sliderValue == option->minimum ) ||
         ( control == SC_ScrollBarAddLine && option->sliderValue == option->maximum ) )
     {
 
-            // manually disable arrow, to indicate that scrollbar is at limit
-        return _helper->arrowColor( palette, QPalette::Disabled, QPalette::WindowText );
-
+        // manually disable arrow, to indicate that scrollbar is at limit
+        color = _helper->arrowColor( palette, QPalette::Disabled, QPalette::WindowText );
+        if( StyleConfigData::animationsEnabled() ) {
+            // finally, global opacity when ScrollBarShowOnMouseOver
+            const qreal globalOpacity( _animations->scrollBarEngine().opacity( widget, QStyle::SC_ScrollBarGroove ) );
+            if( globalOpacity >= 0 ) color.setAlphaF( globalOpacity );
+            // no mouse over and no animation in progress, don't draw arrows at all
+            else if( !widgetMouseOver ) return Qt::transparent;
+        }
+        return color;
     }
 
     const bool mouseOver( _animations->scrollBarEngine().isHovered( widget, control ) );
     const bool animated( _animations->scrollBarEngine().isAnimated( widget, AnimationHover, control ) );
     const qreal opacity( _animations->scrollBarEngine().opacity( widget, control ) );
 
-        // retrieve mouse position from engine
+    // retrieve mouse position from engine
     QPoint position( mouseOver ? _animations->scrollBarEngine().position( widget ) : QPoint( -1, -1 ) );
     if( mouseOver && rect.contains( position ) )
     {
@@ -6735,6 +6777,15 @@ QColor Style::scrollBarArrowColor( const QStyleOptionSlider* option, const SubCo
 
             }
 
+        }
+
+        if( StyleConfigData::animationsEnabled() ) {
+        {
+            // finally, global opacity when ScrollBarShowOnMouseOver
+            const qreal globalOpacity( _animations->scrollBarEngine().opacity( widget, QStyle::SC_ScrollBarGroove ) );
+            if( globalOpacity >= 0 ) color.setAlphaF( globalOpacity );
+            // no mouse over and no animation in progress, don't draw arrows at all
+            else if( !widgetMouseOver ) return Qt::transparent;
         }
 
         return color;
@@ -6991,7 +7042,9 @@ QColor Style::scrollBarArrowColor( const QStyleOptionSlider* option, const SubCo
     bool Style::isQtQuickControl( const QStyleOption* option, const QWidget* widget ) const
     {
         #if QT_VERSION >= 0x050000
-        return (widget == nullptr) && option && option->styleObject && option->styleObject->inherits( "QQuickItem" );
+        const bool is = (widget == nullptr) && option && option->styleObject && option->styleObject->inherits( "QQuickItem" );
+        if ( is ) _windowManager->registerQuickItem( static_cast<QQuickItem*>( option->styleObject ) );
+        return is;
         #else
         Q_UNUSED( widget );
         Q_UNUSED( option );

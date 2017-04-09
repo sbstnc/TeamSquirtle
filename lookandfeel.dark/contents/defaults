@@ -18,3 +18,6 @@ LayoutName=org.kde.teamsquirtle.desktop
 
 [kwinrc][DesktopSwitcher]
 LayoutName=org.kde.teamsquirtle.desktop
+
+[kwinrc][WindowDecoration]
+ library=org.kde.teamsquirtle

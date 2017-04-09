@@ -89,8 +89,18 @@
 #include <NETRootInfo>
 #else
 #include <NETWM>
+#include <QQuickItem>
+#include <QQuickWindow>
 #endif
 
+#endif
+
+#if TEAMSQUIRTLE_HAVE_KWAYLAND
+#include <KWayland/Client/connection_thread.h>
+#include <KWayland/Client/pointer.h>
+#include <KWayland/Client/registry.h>
+#include <KWayland/Client/shell.h>
+#include <KWayland/Client/seat.h>
 #endif
 
 namespace TeamSquirtle
@@ -203,6 +213,11 @@ namespace TeamSquirtle
         _dragInProgress( false ),
         _locked( false ),
         _cursorOverride( false )
+        #if TEAMSQUIRTLE_HAVE_KWAYLAND
+        , _seat( Q_NULLPTR )
+        , _pointer( Q_NULLPTR )
+        , _waylandSerial( 0 )
+        #endif
     {
 
         // install application wise event filter
@@ -224,7 +239,64 @@ namespace TeamSquirtle
 
         initializeWhiteList();
         initializeBlackList();
+        initializeWayland();
 
+    }
+
+    //_______________________________________________________
+    void WindowManager::initializeWayland()
+    {
+        #if TEAMSQUIRTLE_HAVE_KWAYLAND
+        if( !Helper::isWayland() ) return;
+
+        if( _seat ) {
+            // already initialized
+            return;
+        }
+
+        using namespace KWayland::Client;
+        auto connection = ConnectionThread::fromApplication( this );
+        if( !connection ) {
+            return;
+        }
+        Registry *registry = new Registry( this );
+        registry->create( connection );
+        connect(registry, &Registry::interfacesAnnounced, this,
+            [registry, this] {
+                const auto interface = registry->interface( Registry::Interface::Seat );
+                    if( interface.name != 0 ) {
+                        _seat = registry->createSeat( interface.name, interface.version, this );
+                        connect(_seat, &Seat::hasPointerChanged, this, &WindowManager::waylandHasPointerChanged);
+                    }
+            }
+        );
+
+        registry->setup();
+        connection->roundtrip();
+        #endif
+    }
+
+    //_______________________________________________________
+    void WindowManager::waylandHasPointerChanged(bool hasPointer)
+    {
+        #if TEAMSQUIRTLE_HAVE_KWAYLAND
+        Q_ASSERT( _seat );
+        if( hasPointer ) {
+            if( !_pointer ) {
+                _pointer = _seat->createPointer(this);
+                    connect(_pointer, &KWayland::Client::Pointer::buttonStateChanged, this,
+                        [this] (quint32 serial) {
+                            _waylandSerial = serial;
+                        }
+                    );
+                }
+            } else {
+                delete _pointer;
+                _pointer = nullptr;
+            }
+        #else
+        Q_UNUSED( hasPointer );
+        #endif
     }
 
     //_____________________________________________________________
@@ -246,6 +318,21 @@ namespace TeamSquirtle
         }
 
     }
+
+#if !TEAMSQUIRTLE_USE_KDE4
+    void WindowManager::registerQuickItem( QQuickItem* item )
+    {
+        if ( !item ) return;
+
+        QQuickWindow *window = item->window();
+        if (window) {
+            QQuickItem *contentItem = window->contentItem();
+            contentItem->setAcceptedMouseButtons( Qt::LeftButton );
+            contentItem->removeEventFilter( this );
+            contentItem->installEventFilter( this );
+        }
+    }
+#endif
 
     //_____________________________________________________________
     void WindowManager::unregisterWidget( QWidget* widget )
@@ -302,11 +389,19 @@ namespace TeamSquirtle
             break;
 
             case QEvent::MouseMove:
-            if ( object == _target.data() ) return mouseMoveEvent( object, event );
+            if ( object == _target.data()
+#if !TEAMSQUIRTLE_USE_KDE4
+                || object == _quickTarget.data()
+#endif
+                ) return mouseMoveEvent( object, event );
             break;
 
             case QEvent::MouseButtonRelease:
-            if ( _target ) return mouseReleaseEvent( object, event );
+            if ( _target
+#if !TEAMSQUIRTLE_USE_KDE4
+                || _quickTarget
+#endif
+                ) return mouseReleaseEvent( object, event );
             break;
 
             default:
@@ -326,8 +421,15 @@ namespace TeamSquirtle
         {
 
             _dragTimer.stop();
+#if TEAMSQUIRTLE_USE_KDE4
             if( _target )
-            { startDrag( _target.data(), _globalDragPoint ); }
+            { startDrag( _target.data()->window(), _globalDragPoint ); }
+#else
+            if( _target )
+            { startDrag( _target.data()->window()->windowHandle(), _globalDragPoint ); }
+            else if( _quickTarget )
+            { startDrag( _quickTarget.data()->window(), _globalDragPoint ); }
+##endif
 
         } else {
 
@@ -349,6 +451,21 @@ namespace TeamSquirtle
         // check lock
         if( isLocked() ) return false;
         else setLocked( true );
+
+#if !TEAMSQUIRTLE_USE_KDE4
+        // check QQuickItem - we can immediately start drag, because QQuickWindow's contentItem
+        // only receives mouse events that weren't handled by children
+        if ( QQuickItem *item = qobject_cast<QQuickItem*>( object ) ) {
+            _quickTarget = item;
+            _dragPoint = mouseEvent->pos();
+            _globalDragPoint = mouseEvent->globalPos();
+
+            if( _dragTimer.isActive() ) _dragTimer.stop();
+            _dragTimer.start( _dragDelay, this );
+
+            return true;
+        }
+#endif
 
         // cast to widget
         QWidget *widget = static_cast<QWidget*>( object );
@@ -413,7 +530,7 @@ namespace TeamSquirtle
 
             return true;
 
-        } else if( !useWMMoveResize() ) {
+        } else if( !useWMMoveResize() && _target ) {
 
             // use QWidget::move for the grabbing
             /* this works only if the sending object and the target are identical */
@@ -570,12 +687,6 @@ namespace TeamSquirtle
     bool WindowManager::canDrag( QWidget* widget, QWidget* child, const QPoint& position )
     {
 
-        // do not start drag on Wayland, this is not yet supported
-        // To implement integration with KWayland is required
-        // and QtWayland must support getting the wl_seat.
-        // Other option would be adding support to Qt for starting a move
-        if( Helper::isWayland() ) return false;
-
         // retrieve child at given position and check cursor again
         if( child && child->cursor().shape() != Qt::ArrowCursor ) return false;
 
@@ -727,6 +838,9 @@ namespace TeamSquirtle
         }
 
         _target.clear();
+        #if !TEAMSQUIRTLE_USE_KDE4
+        _quickTarget.clear();
+        #endif
         if( _dragTimer.isActive() ) _dragTimer.stop();
         _dragPoint = QPoint();
         _globalDragPoint = QPoint();
@@ -736,50 +850,21 @@ namespace TeamSquirtle
     }
 
     //____________________________________________________________
-    void WindowManager::startDrag( QWidget* widget, const QPoint& position )
+    void WindowManager::startDrag( Window* window, const QPoint& position )
     {
 
-        if( !( enabled() && widget ) ) return;
+        if( !( enabled() && window ) ) return;
         if( QWidget::mouseGrabber() ) return;
 
         // ungrab pointer
         if( useWMMoveResize() )
         {
 
-            #if TEAMSQUIRTLE_HAVE_X11
-            // connection
-            xcb_connection_t* connection( Helper::connection() );
-
-            // window
-            const WId window( widget->window()->winId() );
-
-            #if QT_VERSION >= 0x050300
-            qreal dpiRatio = 1;
-            QWindow* windowHandle = widget->window()->windowHandle();
-            if( windowHandle ) dpiRatio = windowHandle->devicePixelRatio();
-            else dpiRatio = qApp->devicePixelRatio();
-            dpiRatio = qApp->devicePixelRatio();
-            #else
-            const qreal dpiRatio = 1;
-            #endif
-
-            #if TEAMSQUIRTLE_USE_KDE4
-            Display* net_connection = QX11Info::display();
-            #else
-            xcb_connection_t* net_connection = connection;
-            #endif
-
-            xcb_ungrab_pointer( connection, XCB_TIME_CURRENT_TIME );
-            NETRootInfo( net_connection, NET::WMMoveResize ).moveResizeRequest(
-                window, position.x() * dpiRatio,
-                position.y() * dpiRatio,
-                NET::Move );
-
-            #else
-
-            Q_UNUSED( position );
-
-            #endif
+            if( Helper::isX11() ) {
+                startDragX11( window, position );
+            } else if( Helper::isWayland() ) {
+                startDragWayland( window, position );
+            }
 
         } else if( !_cursorOverride ) {
 
@@ -794,9 +879,70 @@ namespace TeamSquirtle
 
     }
 
+    //_______________________________________________________
+    void WindowManager::startDragX11( Window* window, const QPoint& position )
+    {
+        #if TEAMSQUIRTLE_HAVE_X11
+        // connection
+        xcb_connection_t* connection( Helper::connection() );
+
+        #if QT_VERSION >= 0x050300
+        const qreal dpiRatio = window->devicePixelRatio();
+        #else
+        const qreal dpiRatio = 1;
+        #endif
+
+        #if TEAMSQUIRTLE_USE_KDE4
+        Display* net_connection = QX11Info::display();
+        #else
+        xcb_connection_t* net_connection = connection;
+        #endif
+
+        xcb_ungrab_pointer( connection, XCB_TIME_CURRENT_TIME );
+        NETRootInfo( net_connection, NET::WMMoveResize ).moveResizeRequest(
+            window->winId(), position.x() * dpiRatio,
+            position.y() * dpiRatio,
+            NET::Move );
+
+        #else
+
+        Q_UNUSED( window );
+        Q_UNUSED( position );
+
+        #endif
+    }
+
+    //_______________________________________________________
+    void WindowManager::startDragWayland( Window* window, const QPoint& position )
+    {
+        #if TEAMSQUIRTLE_HAVE_KWAYLAND
+        if( !_seat ) {
+            return;
+        }
+
+        QWindow* windowHandle = widget->window()->windowHandle();
+        auto shellSurface = KWayland::Client::ShellSurface::fromWindow(window);
+        if( !shellSurface ) {
+            // TODO: also check for xdg-shell in future
+            return;
+        }
+
+        shellSurface->requestMove( _seat, _waylandSerial );
+        #else
+        Q_UNUSED( window );
+        Q_UNUSED( position );
+        #endif
+    }
+
     //____________________________________________________________
     bool WindowManager::supportWMMoveResize( void ) const
     {
+
+        #if TEAMSQUIRTLE_HAVE_KWAYLAND
+        if( Helper::isWayland() ) {
+            return true;
+        }
+        #endif
 
         #if TEAMSQUIRTLE_HAVE_X11
         return Helper::isX11();

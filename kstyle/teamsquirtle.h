@@ -104,7 +104,7 @@
         // scrollbars
         ScrollBar_Extend = 20,
         ScrollBar_SliderWidth = 6,
-        ScrollBar_MinSliderHeight = 10,
+        ScrollBar_MinSliderHeight = 20,
         ScrollBar_NoButtonHeight = (ScrollBar_Extend-ScrollBar_SliderWidth)/2,
         ScrollBar_SingleButtonHeight = ScrollBar_Extend,
         ScrollBar_DoubleButtonHeight = 2*ScrollBar_Extend,

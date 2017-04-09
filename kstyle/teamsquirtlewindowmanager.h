@@ -31,6 +31,21 @@
 #include <QString>
 #include <QWidget>
 
+#if !TEAMSQUIRTLE_USE_KDE4
+#include <QQuickItem>
+#endif
+
+#if TEAMSQUIRTLE_HAVE_KWAYLAND
+namespace KWayland
+{
+namespace Client
+{
+    class Pointer;
+    class Seat;
+}
+}
+#endif
+
 namespace TeamSquirtle
 {
 
@@ -54,6 +69,11 @@ namespace TeamSquirtle
 
         //* register widget
         void registerWidget( QWidget* );
+
+#if !TEAMSQUIRTLE_USE_KDE4
+        //* register quick item
+        void registerQuickItem( QQuickItem* );
+#endif
 
         //* unregister widget
         void unregisterWidget( QWidget* );
@@ -125,6 +145,12 @@ namespace TeamSquirtle
         */
         void initializeBlackList( void );
 
+        //* initializes the Wayland specific parts
+        void initializeWayland();
+
+        //* The Wayland Seat's hasPointer property changed
+        void waylandHasPointerChanged(bool hasPointer);
+
         //@}
 
         //* returns true if widget is dragable
@@ -146,8 +172,20 @@ namespace TeamSquirtle
         //* reset drag
         void resetDrag( void );
 
+#if QT_VERSION >= 0x050000
+        using Window = QWindow;
+#else
+        using Window = QWidget;
+#endif
+
         //* start drag
-        void startDrag( QWidget*, const QPoint& );
+        void startDrag( Window*, const QPoint& );
+
+        //* X11 specific implementation for startDrag
+        void startDragX11( Window*, const QPoint& );
+
+        //* Wayland specific implementation for startDrag
+        void startDragWayland( Window*, const QPoint& );
 
         //* returns true if window manager is used for moving
         /** right now this is true only for X11 */
@@ -240,6 +278,10 @@ namespace TeamSquirtle
         /** Weak pointer is used in case the target gets deleted while drag is in progress */
         WeakPointer<QWidget> _target;
 
+#if !TEAMSQUIRTLE_USE_KDE4
+        WeakPointer<QQuickItem> _quickTarget;
+#endif
+
         //* true if drag is about to start
         bool _dragAboutToStart;
 
@@ -255,6 +297,15 @@ namespace TeamSquirtle
 
         //* application event filter
         QObject* _appEventFilter;
+
+        #if TEAMSQUIRTLE_HAVE_KWAYLAND
+        //* The Wayland seat object which needs to be passed to move requests.
+        KWayland::Client::Seat* _seat;
+        //* The Wayland pointer object where we get pointer events on.
+        KWayland::Client::Pointer* _pointer;
+        //* latest searial which needs to be passed to the move requests.
+        quint32 _waylandSerial;
+        #endif
 
         //* allow access of all private members to the app event filter
         friend class AppEventFilter;

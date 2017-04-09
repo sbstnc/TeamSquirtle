@@ -39,7 +39,7 @@ if(TEAMSQUIRTLE_USE_KDE4)
 
 else()
 
-  find_package(Qt5 REQUIRED CONFIG COMPONENTS Widgets DBus)
+  find_package(Qt5 REQUIRED CONFIG COMPONENTS Widgets DBus Quick)
   find_package(KF5 REQUIRED COMPONENTS
       I18n
       Config
@@ -151,7 +151,7 @@ else()
 
   kconfig_add_kcfg_files(teamsquirtle_PART_SRCS teamsquirtlestyleconfigdata.kcfgc)
   add_library(teamsquirtle MODULE ${teamsquirtle_PART_SRCS})
-  target_link_libraries(teamsquirtle Qt5::Core Qt5::Gui Qt5::Widgets Qt5::DBus)
+  target_link_libraries(teamsquirtle Qt5::Core Qt5::Gui Qt5::Widgets Qt5::DBus Qt5::Quick)
   target_link_libraries(teamsquirtle KF5::ConfigCore KF5::ConfigWidgets KF5::GuiAddons KF5::WindowSystem)
 
   if( KF5FrameworkIntegration_FOUND )
